@@ -337,16 +337,10 @@ app.get("/api/getVideoInfo", async (req, res) => {
 function runYtDlp(url, options = {}) {
     return youtubeDl(url, {
         ...options,
-
-        // Enable Deno for YouTube's JavaScript extraction.
         jsRuntimes: "deno",
-
-        // Do not download playlists accidentally.
-        noPlaylist: true,
-
-        // Keep output quiet and let our server handle errors.
-        noWarnings: false
+        noPlaylist: true
     });
+
 }
 
 // -------------------------
