@@ -49,7 +49,6 @@ function getYouTubeId(input) {
 
     input = input.trim();
 
-    // Direct video ID
     if (validYouTubeId(input)) {
         return input;
     }
@@ -57,7 +56,6 @@ function getYouTubeId(input) {
     try {
         const url = new URL(input);
 
-        // youtube.com/watch?v=
         if (
             url.hostname === "youtube.com" ||
             url.hostname === "www.youtube.com" ||
@@ -70,7 +68,6 @@ function getYouTubeId(input) {
             }
         }
 
-        // youtu.be/VIDEO_ID
         if (url.hostname === "youtu.be") {
             const id = url.pathname.substring(1);
 
@@ -79,7 +76,6 @@ function getYouTubeId(input) {
             }
         }
 
-        // youtube.com/shorts/VIDEO_ID
         if (url.pathname.startsWith("/shorts/")) {
             const id = url.pathname.split("/")[2];
 
@@ -88,7 +84,6 @@ function getYouTubeId(input) {
             }
         }
 
-        // youtube.com/embed/VIDEO_ID
         if (url.pathname.startsWith("/embed/")) {
             const id = url.pathname.split("/")[2];
 
@@ -211,31 +206,8 @@ app.get("/api/getVideoInfo", async (req, res) => {
 // Run youtube-dl
 // -------------------------
 
-function runYtDlp(args) {
-    return new Promise((resolve, reject) => {
-        if (!args || args.length === 0) {
-            return reject(
-                new Error("No download arguments supplied.")
-            );
-        }
-
-        const url = args[args.length - 1];
-
-        const customArgs = args.slice(0, -1);
-
-        youtubeDl(url, {
-            customArgs: customArgs
-        })
-            .then(stdout => {
-                resolve({
-                    stdout: stdout || "",
-                    stderr: ""
-                });
-            })
-            .catch(error => {
-                reject(error);
-            });
-    });
+function runYtDlp(url, options) {
+    return youtubeDl(url, options);
 }
 
 // -------------------------
@@ -288,17 +260,13 @@ app.get("/api/download/video", async (req, res) => {
             `Starting video download: ${id}`
         );
 
-        await runYtDlp([
-            "--no-playlist",
-            "-f",
-            "bestvideo+bestaudio/best",
-            "--merge-output-format",
-            "mp4",
-            "--restrict-filenames",
-            "-o",
-            outputTemplate,
-            url
-        ]);
+        await runYtDlp(url, {
+            noPlaylist: true,
+            format: "bestvideo+bestaudio/best",
+            mergeOutputFormat: "mp4",
+            restrictFilenames: true,
+            output: outputTemplate
+        });
 
         const file = findFile(
             tempDir,
@@ -396,18 +364,14 @@ app.get("/api/download/audio", async (req, res) => {
             `Starting audio download: ${id}`
         );
 
-        await runYtDlp([
-            "--no-playlist",
-            "-x",
-            "--audio-format",
-            "mp3",
-            "--audio-quality",
-            "192K",
-            "--restrict-filenames",
-            "-o",
-            outputTemplate,
-            url
-        ]);
+        await runYtDlp(url, {
+            noPlaylist: true,
+            extractAudio: true,
+            audioFormat: "mp3",
+            audioQuality: "192K",
+            restrictFilenames: true,
+            output: outputTemplate
+        });
 
         const file = findFile(
             tempDir,
@@ -523,3 +487,4 @@ app.listen(
         );
     }
 );
+
