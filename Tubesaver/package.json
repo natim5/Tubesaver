@@ -1,0 +1,13 @@
+{
+    "name": "tubesaver",
+    "version": "1.0.0",
+    "description": "YouTube video and audio downloader",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js"
+    },
+    "dependencies": {
+        "axios": "^1.20.0",
+        "express": "^4.21.2"
+    }
+}
