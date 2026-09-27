@@ -3,10 +3,8 @@ const axios = require("axios");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { spawn } = require("child_process");
 
-const ytDlp = require("yt-dlp-exec");
-const ffmpegPath = require("ffmpeg-static");
+const youtubeDl = require("youtube-dl-exec");
 
 const app = express();
 
@@ -51,6 +49,7 @@ function getYouTubeId(input) {
 
     input = input.trim();
 
+    // Direct video ID
     if (validYouTubeId(input)) {
         return input;
     }
@@ -58,6 +57,7 @@ function getYouTubeId(input) {
     try {
         const url = new URL(input);
 
+        // youtube.com/watch?v=
         if (
             url.hostname === "youtube.com" ||
             url.hostname === "www.youtube.com" ||
@@ -70,6 +70,7 @@ function getYouTubeId(input) {
             }
         }
 
+        // youtu.be/VIDEO_ID
         if (url.hostname === "youtu.be") {
             const id = url.pathname.substring(1);
 
@@ -78,6 +79,7 @@ function getYouTubeId(input) {
             }
         }
 
+        // youtube.com/shorts/VIDEO_ID
         if (url.pathname.startsWith("/shorts/")) {
             const id = url.pathname.split("/")[2];
 
@@ -86,6 +88,7 @@ function getYouTubeId(input) {
             }
         }
 
+        // youtube.com/embed/VIDEO_ID
         if (url.pathname.startsWith("/embed/")) {
             const id = url.pathname.split("/")[2];
 
@@ -149,7 +152,6 @@ app.get("/api/health", (req, res) => {
         status: "ok",
         service: "TubeSaver",
         ytdlp: true,
-        ffmpeg: Boolean(ffmpegPath),
         time: new Date().toISOString()
     });
 });
@@ -206,51 +208,33 @@ app.get("/api/getVideoInfo", async (req, res) => {
 });
 
 // -------------------------
-// Run yt-dlp
+// Run youtube-dl
 // -------------------------
 
 function runYtDlp(args) {
     return new Promise((resolve, reject) => {
-        const child = spawn(
-            ytDlp,
-            args,
-            {
-                env: {
-                    ...process.env
-                }
-            }
-        );
+        if (!args || args.length === 0) {
+            return reject(
+                new Error("No download arguments supplied.")
+            );
+        }
 
-        let stdout = "";
-        let stderr = "";
+        const url = args[args.length - 1];
 
-        child.stdout.on("data", data => {
-            stdout += data.toString();
-        });
+        const customArgs = args.slice(0, -1);
 
-        child.stderr.on("data", data => {
-            stderr += data.toString();
-        });
-
-        child.on("error", error => {
-            reject(error);
-        });
-
-        child.on("close", code => {
-            if (code === 0) {
+        youtubeDl(url, {
+            customArgs: customArgs
+        })
+            .then(stdout => {
                 resolve({
-                    stdout: stdout,
-                    stderr: stderr
+                    stdout: stdout || "",
+                    stderr: ""
                 });
-            } else {
-                reject(
-                    new Error(
-                        stderr ||
-                        `yt-dlp exited with code ${code}`
-                    )
-                );
-            }
-        });
+            })
+            .catch(error => {
+                reject(error);
+            });
     });
 }
 
@@ -306,8 +290,6 @@ app.get("/api/download/video", async (req, res) => {
 
         await runYtDlp([
             "--no-playlist",
-            "--ffmpeg-location",
-            ffmpegPath,
             "-f",
             "bestvideo+bestaudio/best",
             "--merge-output-format",
@@ -329,7 +311,7 @@ app.get("/api/download/video", async (req, res) => {
 
         if (!file) {
             throw new Error(
-                "yt-dlp finished but no video file was created."
+                "Download completed but no video file was created."
             );
         }
 
@@ -416,8 +398,6 @@ app.get("/api/download/audio", async (req, res) => {
 
         await runYtDlp([
             "--no-playlist",
-            "--ffmpeg-location",
-            ffmpegPath,
             "-x",
             "--audio-format",
             "mp3",
@@ -436,7 +416,7 @@ app.get("/api/download/audio", async (req, res) => {
 
         if (!file) {
             throw new Error(
-                "yt-dlp finished but no MP3 file was created."
+                "Download completed but no MP3 file was created."
             );
         }
 
@@ -501,7 +481,7 @@ app.use("/api", (req, res) => {
 // Frontend
 // -------------------------
 
-app.get("/{*splat}", (req, res) => {
+app.get("*", (req, res) => {
     res.sendFile(
         path.join(
             __dirname,
@@ -527,7 +507,7 @@ app.use((err, req, res, next) => {
 });
 
 // -------------------------
-// Start
+// Start server
 // -------------------------
 
 app.listen(
@@ -539,11 +519,7 @@ app.listen(
         );
 
         console.log(
-            `yt-dlp path: ${ytDlp}`
-        );
-
-        console.log(
-            `FFmpeg path: ${ffmpegPath}`
+            "youtube-dl-exec enabled"
         );
     }
 );
