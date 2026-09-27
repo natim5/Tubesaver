@@ -68,7 +68,10 @@ function getYouTubeId(input) {
             }
         }
 
-        if (url.hostname === "youtu.be") {
+        if (
+            url.hostname === "youtu.be" ||
+            url.hostname === "www.youtu.be"
+        ) {
             const id = url.pathname.substring(1);
 
             if (validYouTubeId(id)) {
@@ -96,6 +99,129 @@ function getYouTubeId(input) {
     }
 
     return null;
+}
+
+// -------------------------
+// Convert yt-dlp errors
+// -------------------------
+
+function getFriendlyDownloadError(error) {
+    const message = String(
+        error?.stderr ||
+        error?.message ||
+        error ||
+        ""
+    );
+
+    const lower = message.toLowerCase();
+
+    if (
+        lower.includes("sign in to confirm") ||
+        lower.includes("not a bot") ||
+        lower.includes("confirm you're not a bot") ||
+        lower.includes("confirm you’re not a bot")
+    ) {
+        return {
+            status: 403,
+            message:
+                "YouTube is currently blocking this download request. Please try again later or try another video."
+        };
+    }
+
+    if (
+        lower.includes("private video") ||
+        lower.includes("this video is private")
+    ) {
+        return {
+            status: 403,
+            message:
+                "This video is private and cannot be downloaded."
+        };
+    }
+
+    if (
+        lower.includes("video unavailable") ||
+        lower.includes("video is unavailable")
+    ) {
+        return {
+            status: 404,
+            message:
+                "This video is unavailable."
+        };
+    }
+
+    if (
+        lower.includes("age-restricted") ||
+        lower.includes("age restricted")
+    ) {
+        return {
+            status: 403,
+            message:
+                "This video is age-restricted and cannot be downloaded by the server."
+        };
+    }
+
+    if (
+        lower.includes("members-only") ||
+        lower.includes("members only")
+    ) {
+        return {
+            status: 403,
+            message:
+                "This video is available to channel members only."
+        };
+    }
+
+    if (
+        lower.includes("live event") ||
+        lower.includes("is a live")
+    ) {
+        return {
+            status: 400,
+            message:
+                "Live videos may not be available for download."
+        };
+    }
+
+    if (
+        lower.includes("private") ||
+        lower.includes("login required") ||
+        lower.includes("authentication required")
+    ) {
+        return {
+            status: 403,
+            message:
+                "YouTube requires authentication for this video."
+        };
+    }
+
+    if (
+        lower.includes("ffmpeg") ||
+        lower.includes("ffprobe")
+    ) {
+        return {
+            status: 500,
+            message:
+                "The server is missing a required media processing component. Please try again later."
+        };
+    }
+
+    if (
+        lower.includes("javascript runtime") ||
+        lower.includes("js runtime")
+    ) {
+        return {
+            status: 500,
+            message:
+                "The server's YouTube extraction runtime is unavailable. Please try again later."
+        };
+    }
+
+    return {
+        status: 500,
+        message:
+            "The video could not be downloaded. Please try again later."
+    };
 }
 
 // -------------------------
@@ -147,6 +273,7 @@ app.get("/api/health", (req, res) => {
         status: "ok",
         service: "TubeSaver",
         ytdlp: true,
+        jsRuntime: "deno",
         time: new Date().toISOString()
     });
 });
@@ -197,17 +324,29 @@ app.get("/api/getVideoInfo", async (req, res) => {
         );
 
         return res.status(502).json({
-            error: "Unable to retrieve video information."
+            error:
+                "Unable to retrieve information for this YouTube video."
         });
     }
 });
 
 // -------------------------
-// Run youtube-dl
+// Run yt-dlp
 // -------------------------
 
-function runYtDlp(url, options) {
-    return youtubeDl(url, options);
+function runYtDlp(url, options = {}) {
+    return youtubeDl(url, {
+        ...options,
+
+        // Enable Deno for YouTube's JavaScript extraction.
+        jsRuntimes: "deno",
+
+        // Do not download playlists accidentally.
+        noPlaylist: true,
+
+        // Keep output quiet and let our server handle errors.
+        noWarnings: false
+    });
 }
 
 // -------------------------
@@ -261,7 +400,6 @@ app.get("/api/download/video", async (req, res) => {
         );
 
         await runYtDlp(url, {
-            noPlaylist: true,
             format: "bestvideo+bestaudio/best",
             mergeOutputFormat: "mp4",
             restrictFilenames: true,
@@ -312,8 +450,13 @@ app.get("/api/download/video", async (req, res) => {
     } catch (error) {
         console.error(
             "Video download error:",
-            error.message
+            error?.stderr ||
+            error?.message ||
+            error
         );
+
+        const friendly =
+            getFriendlyDownloadError(error);
 
         fs.rmSync(
             tempDir,
@@ -323,9 +466,8 @@ app.get("/api/download/video", async (req, res) => {
             }
         );
 
-        return res.status(500).json({
-            error: "Video download failed.",
-            message: error.message
+        return res.status(friendly.status).json({
+            error: friendly.message
         });
     }
 });
@@ -365,7 +507,6 @@ app.get("/api/download/audio", async (req, res) => {
         );
 
         await runYtDlp(url, {
-            noPlaylist: true,
             extractAudio: true,
             audioFormat: "mp3",
             audioQuality: "192K",
@@ -413,8 +554,13 @@ app.get("/api/download/audio", async (req, res) => {
     } catch (error) {
         console.error(
             "Audio download error:",
-            error.message
+            error?.stderr ||
+            error?.message ||
+            error
         );
+
+        const friendly =
+            getFriendlyDownloadError(error);
 
         fs.rmSync(
             tempDir,
@@ -424,9 +570,8 @@ app.get("/api/download/audio", async (req, res) => {
             }
         );
 
-        return res.status(500).json({
-            error: "Audio download failed.",
-            message: error.message
+        return res.status(friendly.status).json({
+            error: friendly.message
         });
     }
 });
@@ -485,6 +630,9 @@ app.listen(
         console.log(
             "youtube-dl-exec enabled"
         );
+
+        console.log(
+            "Deno JavaScript runtime enabled"
+        );
     }
 );
-
