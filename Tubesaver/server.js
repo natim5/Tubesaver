@@ -74,7 +74,7 @@ app.get("/api/getVideoInfo", async (req, res) => {
 
     try {
         const youtubeUrl =
-            https://www.youtube.com/watch?v=${encodeURIComponent(id)};
+            `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
 
         const response = await axios.get(
             "https://www.youtube.com/oembed",
@@ -90,7 +90,7 @@ app.get("/api/getVideoInfo", async (req, res) => {
         return res.json({
             title: response.data.title || "YouTube Video",
             author: response.data.author_name || "YouTube",
-            thumbnail: https://img.youtube.com/vi/${id}/maxresdefault.jpg
+            thumbnail: `https://img.youtube.com/vi/${id}/maxresdefault.jpg`
         });
 
     } catch (error) {
