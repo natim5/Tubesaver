@@ -6,14 +6,22 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 
+// Middleware
 app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: false, limit: "10kb" }));
 
+// Static frontend
 app.use(express.static(path.join(__dirname, "public")));
 
+// -------------------------
+// Helpers
+// -------------------------
+
 function validYouTubeId(id) {
-    return typeof id === "string" &&
-        /^[A-Za-z0-9_-]{11}$/.test(id);
+    return (
+        typeof id === "string" &&
+        /^[A-Za-z0-9_-]{11}$/.test(id)
+    );
 }
 
 function cleanTitle(title) {
@@ -27,6 +35,62 @@ function cleanTitle(title) {
         .trim()
         .substring(0, 150) || "video";
 }
+
+function getYouTubeId(input) {
+    if (typeof input !== "string") {
+        return null;
+    }
+
+    input = input.trim();
+
+    // Direct 11-character ID
+    if (validYouTubeId(input)) {
+        return input;
+    }
+
+    try {
+        const url = new URL(input);
+
+        // youtube.com/watch?v=...
+        if (
+            url.hostname === "youtube.com" ||
+            url.hostname === "www.youtube.com" ||
+            url.hostname === "m.youtube.com"
+        ) {
+            const id = url.searchParams.get("v");
+
+            if (validYouTubeId(id)) {
+                return id;
+            }
+        }
+
+        // youtu.be/VIDEO_ID
+        if (url.hostname === "youtu.be") {
+            const id = url.pathname.substring(1);
+
+            if (validYouTubeId(id)) {
+                return id;
+            }
+        }
+
+        // youtube.com/shorts/VIDEO_ID
+        if (url.pathname.startsWith("/shorts/")) {
+            const id = url.pathname.split("/")[2];
+
+            if (validYouTubeId(id)) {
+                return id;
+            }
+        }
+    } catch (error) {
+        return null;
+    }
+
+    return null;
+}
+
+// -------------------------
+// Rate limiting
+// -------------------------
 
 const requests = new Map();
 
@@ -50,6 +114,7 @@ function rateLimit(req, res, next) {
     }
 
     record.count++;
+
     requests.set(ip, record);
 
     if (record.count > maxRequests) {
@@ -63,12 +128,30 @@ function rateLimit(req, res, next) {
 
 app.use("/api", rateLimit);
 
-app.get("/api/getVideoInfo", async (req, res) => {
-    const id = req.query.id;
+// -------------------------
+// Health check
+// -------------------------
 
-    if (!validYouTubeId(id)) {
+app.get("/api/health", (req, res) => {
+    res.json({
+        status: "ok",
+        service: "TubeSaver",
+        time: new Date().toISOString()
+    });
+});
+
+// -------------------------
+// Get YouTube video info
+// -------------------------
+
+app.get("/api/getVideoInfo", async (req, res) => {
+    const input = req.query.id;
+
+    const id = getYouTubeId(input);
+
+    if (!id) {
         return res.status(400).json({
-            error: "Invalid YouTube video ID."
+            error: "Invalid YouTube URL or video ID."
         });
     }
 
@@ -83,77 +166,133 @@ app.get("/api/getVideoInfo", async (req, res) => {
                     url: youtubeUrl,
                     format: "json"
                 },
-                timeout: 5000
+                timeout: 10000
             }
         );
 
+        const title =
+            cleanTitle(response.data?.title);
+
+        const author =
+            response.data?.author_name || "YouTube";
+
+        const thumbnail =
+            `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
+
         return res.json({
-            title: response.data.title || "YouTube Video",
-            author: response.data.author_name || "YouTube",
-            thumbnail: `https://img.youtube.com/vi/${id}/maxresdefault.jpg`
+            success: true,
+            id,
+            title,
+            author,
+            thumbnail,
+            url: youtubeUrl
         });
 
     } catch (error) {
+        console.error(
+            "getVideoInfo error:",
+            error.response?.status || error.message
+        );
+
         return res.status(502).json({
             error: "Unable to retrieve video information."
         });
     }
 });
 
-app.get("/api/download/video", (req, res) => {
-    const id = req.query.id;
+// -------------------------
+// Video download
+// -------------------------
 
-    if (!validYouTubeId(id)) {
+app.get("/api/download/video", async (req, res) => {
+    const input = req.query.id;
+
+    const id = getYouTubeId(input);
+
+    if (!id) {
         return res.status(400).json({
-            error: "Invalid YouTube video ID."
+            error: "Invalid YouTube URL or video ID."
         });
     }
+
+    /*
+     * Connect your authorized media provider here.
+     *
+     * Do not put an API key directly in this file.
+     * Use an environment variable instead.
+     */
 
     return res.status(501).json({
         error: "Video downloading is not configured.",
         message:
-            "Connect an authorized media provider/API to enable this feature."
+            "Connect an authorized media provider/API to enable video downloads.",
+        id
     });
 });
 
-app.get("/api/download/audio", (req, res) => {
-    const id = req.query.id;
+// -------------------------
+// Audio download
+// -------------------------
 
-    if (!validYouTubeId(id)) {
+app.get("/api/download/audio", async (req, res) => {
+    const input = req.query.id;
+
+    const id = getYouTubeId(input);
+
+    if (!id) {
         return res.status(400).json({
-            error: "Invalid YouTube video ID."
+            error: "Invalid YouTube URL or video ID."
         });
     }
+
+    /*
+     * Connect your authorized media provider here.
+     */
 
     return res.status(501).json({
         error: "Audio downloading is not configured.",
         message:
-            "Connect an authorized media provider/API to enable this feature."
+            "Connect an authorized media provider/API to enable audio downloads.",
+        id
     });
 });
 
-app.get("/api/health", (req, res) => {
-    res.json({
-        status: "ok"
+// -------------------------
+// API 404
+// -------------------------
+
+app.use("/api", (req, res) => {
+    res.status(404).json({
+        error: "API endpoint not found."
     });
 });
 
-// Serve index.html for other routes
+// -------------------------
+// Frontend fallback
+// -------------------------
+
 app.get("/{*splat}", (req, res) => {
     res.sendFile(
         path.join(__dirname, "public", "index.html")
     );
 });
 
+// -------------------------
 // Error handler
+// -------------------------
+
 app.use((err, req, res, next) => {
-    console.error(err);
+    console.error("Server error:", err);
 
     res.status(500).json({
         error: "Internal server error."
     });
 });
 
+// -------------------------
+// Start server
+// -------------------------
+
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(`TubeSaver running on port${PORT}`);
+    console.log(`TubeSaver running on port ${PORT}`);
 });
