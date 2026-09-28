@@ -1,5 +1,11 @@
 [phases.setup]
-nixPkgs = ["nodejs_22", "deno", "ffmpeg"]
+nixPkgs = ["nodejs_22", "ffmpeg"]
+
+[phases.install]
+cmds = [
+  "npm install",
+  "curl -fsSL https://deno.land/install.sh | sh"
+]
 
 [start]
-cmd = "npm run start"
+cmd = "export PATH=$HOME/.deno/bin:$PATH && npm start"
