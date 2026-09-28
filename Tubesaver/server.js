@@ -3,11 +3,9 @@ const axios = require("axios");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-
 const youtubeDl = require("youtube-dl-exec");
 
 const app = express();
-
 const PORT = process.env.PORT || 3000;
 
 // -------------------------
@@ -16,7 +14,6 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: false, limit: "10kb" }));
-
 app.use(express.static(path.join(__dirname, "public")));
 
 // -------------------------
@@ -102,7 +99,7 @@ function getYouTubeId(input) {
 }
 
 // -------------------------
-// Convert yt-dlp errors
+// Friendly yt-dlp errors
 // -------------------------
 
 function getFriendlyDownloadError(error) {
@@ -115,12 +112,14 @@ function getFriendlyDownloadError(error) {
 
     const lower = message.toLowerCase();
 
-    // YouTube bot detection
+    // YouTube bot protection
     if (
         lower.includes("sign in to confirm") ||
         lower.includes("not a bot") ||
         lower.includes("confirm you're not a bot") ||
-        lower.includes("confirm you’re not a bot")
+        lower.includes("confirm you’re not a bot") ||
+        lower.includes("use --cookies-from-browser") ||
+        lower.includes("use --cookies for the authentication")
     ) {
         return {
             status: 403,
@@ -227,6 +226,18 @@ function getFriendlyDownloadError(error) {
         };
     }
 
+    // Rate limiting / temporary blocking
+    if (
+        lower.includes("too many requests") ||
+        lower.includes("rate limit")
+    ) {
+        return {
+            status: 429,
+            message:
+                "YouTube is temporarily limiting requests. Please try again later."
+        };
+    }
+
     return {
         status: 500,
         message:
@@ -290,7 +301,7 @@ app.get("/api/health", (req, res) => {
 });
 
 // -------------------------
-// Get video information
+// Video information
 // -------------------------
 
 app.get("/api/getVideoInfo", async (req, res) => {
@@ -346,28 +357,22 @@ app.get("/api/getVideoInfo", async (req, res) => {
 // -------------------------
 
 function runYtDlp(url, options = {}) {
-    /*
-     * Use the Node executable already running this application.
-     *
-     * EthioDeploy is using Node.js 22, which is supported
-     * by current yt-dlp EJS.
-     */
     const nodeRuntime =
         `node:${process.execPath}`;
 
     return youtubeDl(url, {
         ...options,
 
-        // Use Node instead of Deno.
+        // Use Node.js for YouTube JavaScript challenges
         jsRuntimes: nodeRuntime,
 
-        // Allow yt-dlp to retrieve EJS challenge scripts.
+        // Allow EJS scripts to be retrieved from GitHub
         remoteComponents: "ejs:github",
 
-        // Never download playlists.
+        // Never download playlists
         noPlaylist: true,
 
-        // A browser-like user agent can help normal requests.
+        // Normal browser user agent
         userAgent:
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -389,6 +394,26 @@ function findFile(directory, extensions) {
             lower.endsWith(ext)
         );
     });
+}
+
+// -------------------------
+// Safe temporary directory cleanup
+// -------------------------
+
+function cleanupDirectory(directory) {
+    try {
+        if (directory && fs.existsSync(directory)) {
+            fs.rmSync(directory, {
+                recursive: true,
+                force: true
+            });
+        }
+    } catch (error) {
+        console.error(
+            "Cleanup error:",
+            error.message
+        );
+    }
 }
 
 // -------------------------
@@ -457,13 +482,7 @@ app.get("/api/download/video", async (req, res) => {
                 path.parse(file).name
             ) + ".mp4",
             error => {
-                fs.rmSync(
-                    tempDir,
-                    {
-                        recursive: true,
-                        force: true
-                    }
-                );
+                cleanupDirectory(tempDir);
 
                 if (error) {
                     console.error(
@@ -485,13 +504,7 @@ app.get("/api/download/video", async (req, res) => {
         const friendly =
             getFriendlyDownloadError(error);
 
-        fs.rmSync(
-            tempDir,
-            {
-                recursive: true,
-                force: true
-            }
-        );
+        cleanupDirectory(tempDir);
 
         return res.status(friendly.status).json({
             error: friendly.message
@@ -561,13 +574,7 @@ app.get("/api/download/audio", async (req, res) => {
                 path.parse(file).name
             ) + ".mp3",
             error => {
-                fs.rmSync(
-                    tempDir,
-                    {
-                        recursive: true,
-                        force: true
-                    }
-                );
+                cleanupDirectory(tempDir);
 
                 if (error) {
                     console.error(
@@ -589,13 +596,7 @@ app.get("/api/download/audio", async (req, res) => {
         const friendly =
             getFriendlyDownloadError(error);
 
-        fs.rmSync(
-            tempDir,
-            {
-                recursive: true,
-                force: true
-            }
-        );
+        cleanupDirectory(tempDir);
 
         return res.status(friendly.status).json({
             error: friendly.message
