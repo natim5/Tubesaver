@@ -115,6 +115,7 @@ function getFriendlyDownloadError(error) {
 
     const lower = message.toLowerCase();
 
+    // YouTube bot detection
     if (
         lower.includes("sign in to confirm") ||
         lower.includes("not a bot") ||
@@ -128,6 +129,7 @@ function getFriendlyDownloadError(error) {
         };
     }
 
+    // Private videos
     if (
         lower.includes("private video") ||
         lower.includes("this video is private")
@@ -139,9 +141,11 @@ function getFriendlyDownloadError(error) {
         };
     }
 
+    // Unavailable videos
     if (
         lower.includes("video unavailable") ||
-        lower.includes("video is unavailable")
+        lower.includes("video is unavailable") ||
+        lower.includes("this video is not available")
     ) {
         return {
             status: 404,
@@ -150,6 +154,7 @@ function getFriendlyDownloadError(error) {
         };
     }
 
+    // Age restricted
     if (
         lower.includes("age-restricted") ||
         lower.includes("age restricted")
@@ -161,6 +166,7 @@ function getFriendlyDownloadError(error) {
         };
     }
 
+    // Members only
     if (
         lower.includes("members-only") ||
         lower.includes("members only")
@@ -172,6 +178,7 @@ function getFriendlyDownloadError(error) {
         };
     }
 
+    // Live streams
     if (
         lower.includes("live event") ||
         lower.includes("is a live")
@@ -183,8 +190,8 @@ function getFriendlyDownloadError(error) {
         };
     }
 
+    // Authentication
     if (
-        lower.includes("private") ||
         lower.includes("login required") ||
         lower.includes("authentication required")
     ) {
@@ -195,6 +202,7 @@ function getFriendlyDownloadError(error) {
         };
     }
 
+    // FFmpeg
     if (
         lower.includes("ffmpeg") ||
         lower.includes("ffprobe")
@@ -206,14 +214,16 @@ function getFriendlyDownloadError(error) {
         };
     }
 
+    // JavaScript runtime
     if (
         lower.includes("javascript runtime") ||
-        lower.includes("js runtime")
+        lower.includes("js runtime") ||
+        lower.includes("no supported javascript")
     ) {
         return {
             status: 500,
             message:
-                "The server's YouTube extraction runtime is unavailable. Please try again later."
+                "The server's YouTube JavaScript runtime is unavailable. Please try again later."
         };
     }
 
@@ -273,7 +283,8 @@ app.get("/api/health", (req, res) => {
         status: "ok",
         service: "TubeSaver",
         ytdlp: true,
-        jsRuntime: "deno",
+        jsRuntime: "node",
+        nodeVersion: process.version,
         time: new Date().toISOString()
     });
 });
@@ -335,12 +346,33 @@ app.get("/api/getVideoInfo", async (req, res) => {
 // -------------------------
 
 function runYtDlp(url, options = {}) {
+    /*
+     * Use the Node executable already running this application.
+     *
+     * EthioDeploy is using Node.js 22, which is supported
+     * by current yt-dlp EJS.
+     */
+    const nodeRuntime =
+        `node:${process.execPath}`;
+
     return youtubeDl(url, {
         ...options,
-        jsRuntimes: "deno",
-        noPlaylist: true
-    });
 
+        // Use Node instead of Deno.
+        jsRuntimes: nodeRuntime,
+
+        // Allow yt-dlp to retrieve EJS challenge scripts.
+        remoteComponents: "ejs:github",
+
+        // Never download playlists.
+        noPlaylist: true,
+
+        // A browser-like user agent can help normal requests.
+        userAgent:
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/140.0.0.0 Safari/537.36"
+    });
 }
 
 // -------------------------
@@ -394,7 +426,8 @@ app.get("/api/download/video", async (req, res) => {
         );
 
         await runYtDlp(url, {
-            format: "bestvideo+bestaudio/best",
+            format:
+                "bestvideo+bestaudio/best",
             mergeOutputFormat: "mp4",
             restrictFilenames: true,
             output: outputTemplate
@@ -622,11 +655,15 @@ app.listen(
         );
 
         console.log(
-            "youtube-dl-exec enabled"
+            `Node.js version: ${process.version}`
         );
 
         console.log(
-            "Deno JavaScript runtime enabled"
+            `yt-dlp JavaScript runtime: ${process.execPath}`
+        );
+
+        console.log(
+            "yt-dlp EJS remote components enabled"
         );
     }
 );
