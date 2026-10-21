@@ -256,6 +256,130 @@
             cursor: not-allowed;
         }
 
+        .progress {
+            display: none;
+
+            margin-top: 1rem;
+
+            text-align: left;
+        }
+
+        .progress.show {
+            display: block;
+
+            animation: fadeIn .25s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .progress-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+
+            gap: .75rem;
+
+            margin-bottom: .5rem;
+        }
+
+        #progressPhase {
+            color: #8888a0;
+            font-size: .85rem;
+        }
+
+        #progressPercent {
+            color: #f0f0f5;
+
+            font-size: .85rem;
+            font-weight: 700;
+
+            font-variant-numeric: tabular-nums;
+        }
+
+        .progress-track {
+            height: 8px;
+
+            background: #0f0f11;
+
+            border: 1px solid #2a2a33;
+            border-radius: 8px;
+
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            position: relative;
+
+            width: 0%;
+            height: 100%;
+
+            border-radius: 8px;
+
+            background:
+                linear-gradient(
+                    135deg,
+                    #ff3b5c,
+                    #ff7e5f
+                );
+
+            transition: width .35s ease;
+        }
+
+        .progress-fill.active::after {
+            content: "";
+
+            position: absolute;
+            inset: 0;
+
+            background:
+                linear-gradient(
+                    90deg,
+                    transparent,
+                    rgba(255, 255, 255, .35),
+                    transparent
+                );
+
+            transform: translateX(-100%);
+
+            animation: sheen 1.4s ease-in-out infinite;
+        }
+
+        @keyframes sheen {
+            to {
+                transform: translateX(100%);
+            }
+        }
+
+        .progress-fill.done {
+            background: #2ecc71;
+        }
+
+        .progress-fill.error {
+            background: #e74c3c;
+        }
+
+        .progress-meta {
+            margin-top: .4rem;
+
+            min-height: 1em;
+
+            color: #555;
+
+            font-size: .78rem;
+
+            font-variant-numeric: tabular-nums;
+        }
+
         footer {
             margin-top: 2rem;
 
@@ -367,6 +491,47 @@
                 ⬇ Download Now
             </button>
 
+            <div
+                class="progress"
+                id="progress"
+            >
+
+                <div class="progress-head">
+
+                    <span id="progressPhase">
+                        Preparing download…
+                    </span>
+
+                    <span id="progressPercent">
+                        0%
+                    </span>
+
+                </div>
+
+                <div
+                    class="progress-track"
+                    id="progressBar"
+                    role="progressbar"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0"
+                    aria-label="Download progress"
+                >
+
+                    <div
+                        class="progress-fill"
+                        id="progressFill"
+                    ></div>
+
+                </div>
+
+                <div
+                    class="progress-meta"
+                    id="progressMeta"
+                ></div>
+
+            </div>
+
         </div>
 
     </div>
@@ -408,10 +573,30 @@
     const btnAudio =
         document.getElementById("btnAudio");
 
+    const progressEl =
+        document.getElementById("progress");
+
+    const progressBar =
+        document.getElementById("progressBar");
+
+    const progressFill =
+        document.getElementById("progressFill");
+
+    const progressPhase =
+        document.getElementById("progressPhase");
+
+    const progressPercent =
+        document.getElementById("progressPercent");
+
+    const progressMeta =
+        document.getElementById("progressMeta");
+
 
     let currentFormat = "video";
 
     let currentVideoId = null;
+
+    let progressSource = null;
 
 
     // --------------------------------
@@ -443,6 +628,97 @@
         statusEl.className = "";
 
         statusEl.classList.add(type);
+    }
+
+
+    // --------------------------------
+    // Progress bar
+    // --------------------------------
+
+    function setProgress({
+        percent,
+        phase,
+        status,
+        speed,
+        eta,
+        message
+    }) {
+
+        const value =
+            Math.max(
+                0,
+                Math.min(100, Math.round(percent || 0))
+            );
+
+        progressEl.classList.add("show");
+
+        progressBar.setAttribute(
+            "aria-valuenow",
+            String(value)
+        );
+
+        progressFill.style.width = value + "%";
+
+        progressPercent.textContent = value + "%";
+
+        if (phase) {
+            progressPhase.textContent = phase;
+        }
+
+        const running =
+            status === "starting" ||
+            status === "waiting" ||
+            status === "downloading" ||
+            status === "postprocessing";
+
+        progressFill.classList.toggle("active", running);
+        progressFill.classList.toggle("done", status === "done");
+        progressFill.classList.toggle("error", status === "error");
+
+        const meta = [];
+
+        if (speed && status === "downloading") {
+            meta.push(speed);
+        }
+
+        if (
+            eta &&
+            eta !== "Unknown" &&
+            status === "downloading"
+        ) {
+            meta.push("ETA " + eta);
+        }
+
+        if (message && status === "error") {
+            meta.push(message);
+        }
+
+        progressMeta.textContent = meta.join("  ·  ");
+    }
+
+
+    function resetProgress() {
+
+        progressFill.classList.remove(
+            "active",
+            "done",
+            "error"
+        );
+
+        setProgress({
+            percent: 0,
+            phase: "Preparing download…",
+            status: "starting"
+        });
+    }
+
+
+    function closeProgressSource() {
+
+        if (progressSource) {
+            progressSource.close();
+            progressSource = null;
+        }
     }
 
 
@@ -562,7 +838,8 @@
 
             videoTitle.textContent =
                 data.title ||
-                "YouTube Video";
+                "YouTube Video" ||
+                "Video";
 
 
             // --------------------------------
@@ -571,7 +848,8 @@
 
             videoChannel.textContent =
                 data.author ||
-                "YouTube";
+                "YouTube" ||
+                "Channel";
 
 
             // --------------------------------
@@ -663,6 +941,20 @@
                     : "/api/download/video";
 
 
+            // Id shared by the progress stream and the download
+            // request so the server can pair the two together.
+
+            const jobId =
+                (
+                    (window.crypto &&
+                        crypto.randomUUID &&
+                        crypto.randomUUID()) ||
+                    `${Date.now()}${Math.random()
+                        .toString(16)
+                        .slice(2)}`
+                ).replace(/-/g, "");
+
+
             downloadBtn.disabled = true;
 
             downloadBtn.textContent =
@@ -675,11 +967,56 @@
             );
 
 
+            closeProgressSource();
+
+            resetProgress();
+
+
+            // --------------------------------
+            // Live progress stream
+            // --------------------------------
+
+            progressSource =
+                new EventSource(
+                    `/api/progress?job=${encodeURIComponent(jobId)}`
+                );
+
+
+            progressSource.onmessage = event => {
+
+                let data;
+
+                try {
+                    data = JSON.parse(event.data);
+                } catch (_) {
+                    return;
+                }
+
+
+                setProgress(data);
+
+
+                if (
+                    data.status === "done" ||
+                    data.status === "error"
+                ) {
+                    closeProgressSource();
+                }
+            };
+
+
+            progressSource.onerror = () => {
+                // The server ends the stream once the job is
+                // finished; stop EventSource from reconnecting.
+                closeProgressSource();
+            };
+
+
             try {
 
                 const response =
                     await fetch(
-                        `${endpoint}?id=${encodeURIComponent(currentVideoId)}`
+                        `${endpoint}?id=${encodeURIComponent(currentVideoId)}&job=${encodeURIComponent(jobId)}`
                     );
 
 
@@ -737,6 +1074,13 @@
                 }
 
 
+                setProgress({
+                    percent: 100,
+                    phase: "Saving file…",
+                    status: "postprocessing"
+                });
+
+
                 const blob =
                     await response.blob();
 
@@ -771,9 +1115,25 @@
                 );
 
 
+                setProgress({
+                    percent: 100,
+                    phase: "Download complete",
+                    status: "done"
+                });
+
+
                 showStatus(
                     "Download started.",
                     "success"
+                );
+
+
+                setTimeout(
+                    () =>
+                        progressEl.classList.remove(
+                            "show"
+                        ),
+                    2500
                 );
 
 
@@ -785,6 +1145,16 @@
                 );
 
 
+                setProgress({
+                    percent: 0,
+                    phase: "Download failed",
+                    status: "error",
+                    message:
+                        error.message ||
+                        "Download unavailable."
+                });
+
+
                 showStatus(
                     error.message ||
                     "Download unavailable.",
@@ -792,6 +1162,8 @@
                 );
 
             } finally {
+
+                closeProgressSource();
 
                 downloadBtn.disabled =
                     false;
