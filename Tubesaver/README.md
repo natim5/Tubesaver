@@ -22,14 +22,30 @@ npm start
 
 Open http://localhost:3000
 
-## Deploying to Railway
+## Deploying to Render (free tier)
 
 1. Push this repository to GitHub (already done: `d3fau1t11/Tubesaver`).
-2. Go to https://railway.com/new and choose "Deploy from GitHub repo".
-3. Select `Tubesaver`. Railway reads `nixpacks.toml` (Node 22 + ffmpeg) and
-   `railway.json` (health check at `/api/health`).
-4. Deploy - no environment variables are required.
-5. Generate a public domain under Settings > Networking.
+2. Go to https://dashboard.render.com and choose **New > Web Service**.
+3. Connect the `d3fau1t11/Tubesaver` repo. Render reads `render.yaml`
+   (Node 22, `npm ci` build, `npm start`, health check at `/api/health`).
+4. Leave the plan as **Free** and deploy - no environment variables required.
+5. Your app gets a `https://tubesaver-xxxx.onrender.com` URL automatically.
+
+### Free tier caveats
+
+- The service **spins down after ~15 minutes without traffic**. The next
+  visitor waits ~50 seconds for a cold start. Use an uptime pinger
+  (e.g. UptimeRobot on the `/api/health` endpoint) if that bothers you.
+- Free instances share CPU, so big downloads are slower than on a paid plan.
+
+## Deploying to Railway (alternative, ~$5/mo)
+
+If slow cold starts become annoying, Railway runs the same code with the
+existing `nixpacks.toml` + `railway.json`, always-on:
+
+1. Go to https://railway.com/new and choose "Deploy from GitHub repo".
+2. Select `Tubesaver`.
+3. Deploy and generate a public domain under Settings > Networking.
 
 ### Environment variables (all optional)
 
